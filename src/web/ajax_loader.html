@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Ajax loader Try</title>
+    <script src="https://code.jquery.com/jquery-3.1.1.slim.min.js"></script>
+    <script src="/js/simpleevent.js"></script>
+    <script src="/js/ajaxloader.js"></script>
+</head>
+<body>
+<h1>Ajax loader Try</h1>
+
+File link <input id="file-link" type="text" value="">
+<script>
+    var fileLink = document.getElementById('file-link');
+    fileLink.value = location.protocol + '//' + location.host + '/video/magicans_trailer_enc.mp4';
+</script>
+<br>
+<input id="load-btn" type="button" value="Load file">
+<br>
+<a id="file" href="#" target="_blank">File</a>
+
+<script>
+    var fileElmn = document.getElementById('file');
+    var loadBtn = document.getElementById('load-btn');
+    var loader = new ajaxLoader();
+    var evnt = new SimpleEvent();
+    var url = fileLink.value;
+
+    var fileSize = 0;
+    var fileType = '';
+    var fileChunks = [];
+
+    var byteStart = 0;
+    var byteStep = 1024*1024;
+
+    function clear() {
+        fileSize = 0;
+        fileType = '';
+        fileChunks = [];
+        fileElmn.href = '#';
+    }
+
+    evnt.on('load-info', function() {
+        loader.head(url, function(err, headers) {
+            if(err != null) {
+                clear();
+
+                console.log('load-info error=' + err);
+                alert('Error: ' + err);
+                return;
+            }
+
+            fileSize = parseInt(headers['Content-Length'], 10);
+            fileType = headers['Content-Type'];
+
+            console.log('load-info fileSize='+fileSize+' fileType='+fileType);
+
+            evnt.fire('load-chunk');
+        });
+    });
+    evnt.on('load-chunk', function() {
+        var start = byteStart;
+        var end = start + byteStep;
+        var isLast = false;
+        if(end >= fileSize) {
+            end = fileSize;
+            isLast = true;
+        }
+
+        console.log('load-chunk ' + start + '-' + end + ' isLast=' + isLast);
+
+        loader.range(url, start, end-1, function(err, data) {
+            if(err != null) {
+                clear();
+
+                console.log('load-info error=' + err);
+                alert('Error: ' + err);
+                return;
+            }
+
+            fileChunks.push(data);
+
+            if(isLast) {
+                evnt.fire('load-success');
+            } else {
+                byteStart = end;
+                evnt.fire('load-chunk');
+            }
+        });
+    });
+    evnt.on('load-success', function(){
+        var blob = new Blob(fileChunks, {type: fileType});
+        var dataUrl = URL.createObjectURL(blob);
+
+        fileElmn.href = dataUrl;
+
+        alert('File ready. Size='+blob.size + ' Type=' + blob.type);
+    });
+    evnt.on('load-start', function(){
+        evnt.fire('load-info');
+    });
+
+    loadBtn.onclick = function() {
+        clear();
+        evnt.fire('load-start');
+    };
+
+</script>
+
+</body>
+</html>

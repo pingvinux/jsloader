@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WebRTC loader Try</title>
+    <script src="https://code.jquery.com/jquery-3.1.1.slim.min.js"></script>
+    <script src="/js/simpleevent.js"></script>
+    <script src="/js/peer.js"></script>
+    <script src="/js/webrtcloader.js"></script>
+</head>
+<body>
+<h1>WebRTC loader Try</h1>
+<p>
+    <input id="try-file" type="file">
+</p>
+<p>
+    <input type="button" id="send-file" value="Get file">
+    <input type="button" id="send-chunked-file" value="Get chunked file">
+    <span>       </span>
+    <a id="file-link" href="#" style="display:none;" target="_blank">File link</a>
+</p>
+<p>
+    My Id: <span id="peer-id"></span>
+</p>
+<p>Other peers:</p>
+<p id="all-peers">
+</p>
+
+
+<script>
+    var fileElm = document.getElementById('try-file');
+    var fileLink = document.getElementById('file-link');
+    var sendFileBtn = document.getElementById('send-file');
+    var sendChFileBtn = document.getElementById('send-chunked-file');
+    var peerIdElm = document.getElementById('peer-id');
+    var peersElm = document.getElementById('all-peers');
+
+    var config = {
+        key: 'peerjs',
+        host: 'webrtc-signls.dev',
+        port: 9000,
+
+        updatePeriod: 3000
+    };
+    var loader = new webRTCloader(config);
+    loader.on('peer-init', function(id) {
+        peerIdElm.innerHTML = id;
+    });
+    loader.on('peer-connected', function(peerId) {
+        console.log('Connect from ' + peerId);
+    });
+    loader.on('peer-data', function(peerId, data) {
+        console.log('Data from ' + peerId, data);
+        if(typeof data.getFile !== 'undefined') {
+            var msg;
+            if(fileElm.files.length == 0) {
+                msg = {
+                    error: 'No input file'
+                }
+            } else {
+                msg = {
+                    fileSize: fileElm.files[0].size,
+                    fileType: fileElm.files[0].type,
+                    file: fileElm.files[0]
+                }
+            }
+            loader.send(peerId, msg);
+        }
+        if(typeof data.getFileChunk !== 'undefined') {
+            if(fileElm.files.length == 0) {
+                msg = {
+                    error: 'No input file'
+                }
+            } else {
+                var start = data.getFileChunk[0];
+                var end = data.getFileChunk[1];
+
+                msg = {
+                    fileSize: fileElm.files[0].size,
+                    fileType: fileElm.files[0].type,
+                    startChunk: start,
+                    endChunk: end,
+                    fileChunk: fileElm.files[0].slice(start, end+1, fileElm.files[0].type)
+                }
+            }
+            loader.send(peerId, msg);
+        }
+    });
+    loader.on('peer-error', function(peerId, err){
+        console.log('Error from ' + peerId, err);
+    });
+    loader.on('peer-close', function(peerId){
+        console.log('Close from ' + peerId);
+    });
+    loader.on('peer-update', function(peers){
+        console.log('Update peers');
+
+        var tmp = '';
+        for(var i = 0; i < peers.length; i++) {
+            tmp += '<div>'+peers[i]+'</div>';
+        }
+        peersElm.innerHTML = tmp;
+    });
+
+    sendFileBtn.onclick = function() {
+        $(fileLink).hide();
+
+
+        loader.getFile(function(data){
+            console.log('loader.getFile.data', data);
+
+            if(typeof data.error != 'undefined') {
+                alert('Error: ' + data.error);
+                return;
+            }
+
+            var blob = new Blob([new Uint8Array(data.file)], {type: data.fileType});
+            var url = URL.createObjectURL(blob);
+
+            fileLink.href = url;
+            $(fileLink).show();
+
+            alert('File ready. Size=' + blob.size + ' Type=' + blob.type);
+        }, function(err){
+            console.log('loader.getFile.error', err);
+
+            alert('Error: ' + err);
+        });
+        return false;
+    };
+
+    var fileSize = null;
+    var fileType = null;
+    var fileChunks = [];
+    var startByte = 0;
+    var stepByte = 1024*1024;
+
+    var eventBus = new SimpleEvent();
+
+    eventBus.on('load-chunk', function() {
+        var start = startByte;
+        var end = (start + stepByte) - 1;
+        var isLast = false;
+        if(fileSize != null && end >=  fileSize) {
+            end = fileSize - 1;
+            isLast = true;
+        }
+
+        loader.getFileChunk(start, end, function(data){
+            console.log('loader.getFileChunk.data', data);
+
+            if(typeof data.error != 'undefined') {
+                eventBus.fire('load-error', [data.error]);
+                return;
+            }
+
+            if(fileSize == null) {
+                fileSize = data.fileSize;
+            }
+            if(fileType == null) {
+                fileType = data.fileType;
+            }
+
+            var blob = new Blob([new Uint8Array(data.fileChunk)], {type: data.fileType});
+            fileChunks.push(blob);
+
+            if(isLast) {
+                eventBus.fire('load-success');
+            } else {
+                startByte = end + 1;
+                eventBus.fire('load-chunk');
+            }
+        }, function(err){
+            console.log('loader.getFileChunk.error', err);
+
+            eventBus.fire('load-error', [err]);
+        });
+    });
+    eventBus.on('load-error', function(err) {
+        fileSize = null;
+        fileType = null;
+        fileChunks = [];
+        startByte = 0;
+
+        alert(err);
+    });
+    eventBus.on('load-success', function() {
+        var blob = new Blob(fileChunks, {type: fileType});
+        var url = URL.createObjectURL(blob);
+
+        console.log(fileChunks);
+        console.log(blob);
+
+        fileLink.href = url;
+        $(fileLink).show();
+
+        fileSize = null;
+        fileType = null;
+        fileChunks = [];
+        startByte = 0;
+
+        alert('File ready. Size=' + fileSize + ' Type=' + fileType);
+    });
+
+    sendChFileBtn.onclick = function() {
+        eventBus.fire('load-chunk');
+        return false;
+    };
+</script>
+
+</body>
+</html>

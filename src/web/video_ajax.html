@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Video-AJAX Try</title>
+</head>
+<body>
+
+<video id="video" controls width="640" height="360">
+</video>
+<p>
+    <a id="file-link">File</a>
+</p>
+
+<script>
+    var video = document.getElementById('video');
+    var file = document.getElementById('file-link');
+    var url = "http://webrtc-chat.dev/video/magicans_trailer_enc.mp4";
+
+    function ChunkBlob() {
+        this.blob = undefined;
+        this.parts = [];
+        this.length = 0;
+        this.type = '';
+
+        this.append = function(data) {
+            this.blob = undefined;
+            this.length += data.length;
+            this.parts.push(data)
+        };
+
+        this.getBlob = function() {
+            if(this.blob == undefined) {
+                console.log('this.parts.length: ' + this.parts.length);
+                console.log('this.parts:', this.parts);
+
+                this.blob = new Blob(this.parts, {type: this.type});
+            }
+
+            return this.blob;
+        };
+    }
+
+    function FileInfo() {
+        this.length = 0;
+        this.type = '';
+    }
+
+    function AJAXgetInfo(url) {
+        xhr = new XMLHttpRequest();
+        xhr.open('HEAD', url, false);
+        xhr.send();
+
+        var fileInfo = new FileInfo();
+        fileInfo.length = xhr.getResponseHeader('Content-Length');
+        fileInfo.type = xhr.getResponseHeader('Content-type');
+        return fileInfo;
+    }
+
+
+    function AJAXload(url, info, callback, callbackEnd) {
+        var range = 1000*1024;
+        var offset = 0;
+        var limit = info.length;
+
+        function load_data(offset, range, limit) {
+            var start = offset;
+            var end = (offset+range)-1;
+
+            console.log('Load ' + url + ' range=' + start + '-' + end + ' limit='+limit);
+
+            if(start > limit) {
+                return callbackEnd();
+            }
+
+            var bb = '';
+            if(end > limit) {
+                bb = 'bytes=' + start + '-';
+            } else {
+                bb = 'bytes=' + start + '-' + (end);
+            }
+
+            xhr = new XMLHttpRequest();
+            xhr.responseType = 'blob';
+            xhr.open('GET', url, true);
+            xhr.setRequestHeader('Range', bb);
+            xhr.onload = function(e) {
+                if(xhr.status == 206) {
+                    callback(xhr.response);
+                    load_data(end+1, range, limit);
+                }
+            };
+            xhr.send();
+        }
+        return load_data(offset, range, limit);
+    }
+
+    var fileInfo = AJAXgetInfo(url);
+    var chunkBlob = new ChunkBlob();
+    chunkBlob.type = 'plain/text';
+
+    AJAXload(url, fileInfo, function(data) {
+        chunkBlob.append(data)
+    }, function(){
+        console.log(chunkBlob);
+
+        var blob = chunkBlob.getBlob();
+        var dataUrl = URL.createObjectURL(blob);
+
+        console.log(blob);
+        console.log(dataUrl);
+
+        file.href = dataUrl;
+
+        video.src = dataUrl;
+
+        //URL.revokeObjectURL(dataUrl);
+    });
+
+
+
+</script>
+
+
+</body>
+</html>

@@ -1,0 +1,13 @@
+version: '2'
+services:
+  nginx-static:
+    build: ./nginx-static
+    volumes:
+      - "${PROJECT_ROOT}/_docker/nginx-static/nginx/conf/sites-enabled:/etc/nginx/sites-enabled"
+      - "${PROJECT_ROOT}/src/web:/var/www/jsloader"
+    ports:
+      - "80:80"
+  nodejs-peers:
+    build: ./nodejs-peers
+    ports:
+      - "9000:9000"
